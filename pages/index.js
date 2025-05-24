@@ -1,114 +1,268 @@
-import Image from "next/image";
-import { Geist, Geist_Mono } from "next/font/google";
+import { useEffect, useState } from "react";
+import { ethers } from "ethers";
+import { abi } from "../constants/abi";
+import styles from "@/styles/Raffle.module.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const CONTRACT_ADDRESS = "0x472ed72434b35bd562886256b5de87e887340d25";
+const RPC_URL = "https://testnet-rpc.monad.xyz/";
+const readOnlyProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
+const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, readOnlyProvider);
 
 export default function Home() {
-  return (
-    <div
-      className={`${geistSans.variable} ${geistMono.variable} grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]`}
-    >
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              pages/index.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [winner, setWinner] = useState("");
+  const [poolAmount, setPoolAmount] = useState(0);
+  const [userBalance, setUserBalance] = useState(0);
+  const [entryAmount, setEntryAmount] = useState("");
+  const [account, setAccount] = useState(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
+  useEffect(() => {
+    if (!account || !window.ethereum) return;
+
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const contractWithSigner = contract.connect(provider.getSigner());
+
+    // evnt: RaffleEnter , RaffleReEnter 
+    const onEnterRaffle = (player, value) => {
+      if (player.toLowerCase() === account.toLowerCase()) {
+        updateUI(provider.getSigner(), account); 
+      }
+    };
+
+    // evnt: WinnerPicked
+    const onWinnerPicked = (winner) => {
+      setWinner(winner);
+      updateUI(provider.getSigner(), account); 
+    };
+
+    contractWithSigner.on("RaffleEnter", onEnterRaffle);
+    contractWithSigner.on("RaffleReEnter", onEnterRaffle);
+    contractWithSigner.on("WinnerPicked", onWinnerPicked);
+
+    return () => {
+      contractWithSigner.off("RaffleEnter", onEnterRaffle);
+      contractWithSigner.off("RaffleReEnter", onEnterRaffle);
+      contractWithSigner.off("WinnerPicked", onWinnerPicked);
+    };
+  }, [account]);
+
+  const updateUI = async (signer, account) => {
+    try {
+      const contractWithSigner = contract.connect(signer);
+
+      const lastWinner = await contractWithSigner.getRecentWinner();
+      const pool = await contractWithSigner.getBalance();
+
+      // get player balance onlyif  connected
+      if (account) {
+        const balance = await contractWithSigner.getPlayerBlance(account);
+        setUserBalance(ethers.utils.formatEther(balance));
+      }
+
+      setWinner(lastWinner?.toString() || "No winner yet");
+      setPoolAmount(ethers.utils.formatEther(pool));
+    } catch (error) {
+      console.error("Error updating UI:", error);
+    }
+  };
+
+  // connect metamask
+  const handleConnect = async () => {
+    try {
+      // Clear cached wallet information to ensure re-signing on every connect
+      localStorage.removeItem("walletconnect");
+      localStorage.removeItem("WALLETCONNECT_DEEPLINK_CHOICE");
+
+      if (!window.ethereum) {
+        throw new Error("MetaMask not installed");
+      }
+
+      // Request permissions to ensure re-authorization
+      await window.ethereum.request({
+        method: 'wallet_requestPermissions',
+        params: [{ eth_accounts: {} }],
+      });
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []); // Request wallet connection
+
+      const signer = provider.getSigner();
+      const account = await signer.getAddress();
+      setAccount(account);
+
+      // Switch to Monad Testnet
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x279f' }],
+        });
+      } catch (error) {
+        if (error.code === 4902) {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: "0x279f",
+              chainName: "Monad Testnet",
+              nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+              rpcUrls: [RPC_URL],
+              blockExplorerUrls: ['https://testnet.monadexplorer.com']
+            }]
+          });
+        } else {
+          throw error;
+        }
+      }
+
+      // Update UI with connected account
+      setUserBalance(0); // Reset user balance
+      updateUI(signer, account);
+    } catch (error) {
+      console.error("Error connecting wallet:", error);
+    }
+  };
+
+  const handleDisconnect = () => {
+    setAccount(null);
+    setUserBalance(0);
+    localStorage.removeItem("walletconnect");
+    localStorage.removeItem("WALLETCONNECT_DEEPLINK_CHOICE");
+  };
+
+
+  const handleEnter = async () => {
+    if (!entryAmount || entryAmount < 0.05) {
+      alert("Minimum entry is 0.05 MON");
+      return;
+    }
+
+    try {
+      if (!window.ethereum) throw new Error("MetaMask not installed");
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contractWithSigner = contract.connect(signer);
+
+      await contractWithSigner.enterRaffle({
+        value: ethers.utils.parseEther(entryAmount),
+      });
+
+      setEntryAmount("");
+    } catch (error) {
+      console.error("Error entering raffle:", error);
+    }
+  };
+
+  return (
+    <div className={styles.container}>
+      <div style={{ color: '#fff', textAlign: 'center', marginBottom: '0.5rem', fontSize: '0.8rem', opacity: 0.7 }}>
+        please disable the Core wallet plugin in the browser extension.please use metamask
+      </div>
+      {/* connect button*/}
+      <div className={styles.connectWrapper}>
+        {!account ? (
+          <button
+            onClick={handleConnect}
+            className={styles.connectButton}
+          >
+            Connect MetaMask
+          </button>
+        ) : (
+          <div className={styles.accountInfo}>
+            <span>{account.slice(0, 6)}...{account.slice(-4)}</span>
+            <button
+              onClick={handleDisconnect}
+              className={styles.disconnectButton}
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* main */}
+      <main className={styles.mainContent}>
+        <h1 className={styles.title}>Monad Raffle (Testnet)</h1>
+
+        <div className={styles.winnerCard}>
+          <h2 className={styles.winnerTitle}>Congratulations to last recent winner!</h2>
+          <p className={styles.winnerAddress}>{winner}</p>
+        </div>
+
+        {/* show rules */}
+        <div className={styles.card}>
+          <h3 className={styles.rulesTitle}>Rules:</h3>
+          <ul className={styles.rulesList}>
+            <li className={styles.rulesItem}>Weekly draw every Thursday 08:30~08:35 UTC</li>
+            <li className={styles.rulesItem}>Minimum entry: 0.05 MON</li>
+            <li className={styles.rulesItem}>More contribution = Higher chances ❕❕❕</li>
+          </ul>
+        </div>
+
+        {/* show data */}
+        <div className={styles.statsGrid}>
+          <div className={styles.statCard}>
+            <h3 className={styles.statTitle}>Total Prize Pool</h3>
+            <p className={styles.statValue}>{poolAmount} MON</p>
+          </div>
+          <div className={styles.statCard}>
+            <h3 className={styles.statTitle}>Your Contribution</h3>
+            <p className={styles.statValue}>{userBalance} MON</p>
+          </div>
+        </div>
+
+        {/* enter */}
+        <div className={styles.entryForm}>
+          <div className={styles.formContainer}>
+            <input
+              type="number"
+              value={entryAmount}
+              onChange={(e) => setEntryAmount(e.target.value)}
+              placeholder="Enter MON amount"
+              className={styles.inputField}
+              step="0.01"
+              min="0.05"
+            />
+            <button
+              onClick={handleEnter}
+              disabled={!account}
+              className={styles.submitButton}
+            >
+              {account ? "Enter Raffle!" : "Connect Wallet First"}
+            </button>
+          </div>
+        </div>
+
+        {/* explanation */}
+        <div className={styles.techNote}>
+          <p className={styles.techNoteText}>
+            In monad testnet, Chainlink has not yet implemented VRF and Keepers,
+            but Chainlink's CCIP can be used in monad testnet. Therefore:
+          </p>
+          <ul className={styles.rulesList}>
+            <li className={styles.rulesItem}>Using VRF on Avalanche's fuji net to generate random numbers for picking winners</li>
+            <li className={styles.rulesItem}>Using Keepers on Avalanche's fuji net to periodically call pickWinner in Monad testnet</li>
+          </ul>
+        </div>
+
+        {/* footer */}
+        <div className={styles.footerLinks}>
           <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
+            href="https://testnet.monadexplorer.com/address/0x472ed72434B35Bd562886256B5De87E887340D25?tab=Contract"
             target="_blank"
             rel="noopener noreferrer"
+            className={styles.footerLink}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
+            Monad Contract➡
           </a>
           <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
+            href="https://subnets-test.avax.network/c-chain/address/0x528508327b2fa3b5d622b7c83152f8fe5d6fa3f7"
             target="_blank"
             rel="noopener noreferrer"
+            className={styles.footerLink}
           >
-            Read our docs
+            Avalanche Contract➡
           </a>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
