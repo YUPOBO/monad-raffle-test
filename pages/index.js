@@ -15,9 +15,10 @@ export default function Home() {
   const [entryAmount, setEntryAmount] = useState("");
   const [account, setAccount] = useState(null);
 
-  useEffect(() => {
+  /* useEffect(() => {
     if (!account || !window.ethereum) return;
 
+    
     const provider = new ethers.providers.Web3Provider(window.ethereum);
     const contractWithSigner = contract.connect(provider.getSigner());
 
@@ -32,6 +33,55 @@ export default function Home() {
     const onWinnerPicked = (winner) => {
       setWinner(winner);
       updateUI(provider.getSigner(), account); 
+    };
+
+    contractWithSigner.on("RaffleEnter", onEnterRaffle);
+    contractWithSigner.on("RaffleReEnter", onEnterRaffle);
+    contractWithSigner.on("WinnerPicked", onWinnerPicked);
+
+    return () => {
+      contractWithSigner.off("RaffleEnter", onEnterRaffle);
+      contractWithSigner.off("RaffleReEnter", onEnterRaffle);
+      contractWithSigner.off("WinnerPicked", onWinnerPicked);
+    };
+  }, [account]); */
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        // get init data
+        const lastWinner = await contract.getRecentWinner();
+        const pool = await contract.getBalance();
+
+        setWinner(lastWinner?.toString() || "No winner yet");
+        setPoolAmount(ethers.utils.formatEther(pool));
+
+        // connected
+        if (account && window.ethereum) {
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          await updateUI(provider.getSigner(), account);
+        }
+      } catch (error) {
+        console.error("Failed to fetch initial data:", error);
+      }
+    };
+
+    fetchInitialData();
+
+    // events
+    if (!account || !window.ethereum) return;
+
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const contractWithSigner = contract.connect(provider.getSigner());
+
+    const onEnterRaffle = (player, value) => {
+      if (player.toLowerCase() === account.toLowerCase()) {
+        updateUI(provider.getSigner(), account);
+      }
+    };
+
+    const onWinnerPicked = (winner) => {
+      setWinner(winner);
+      updateUI(provider.getSigner(), account);
     };
 
     contractWithSigner.on("RaffleEnter", onEnterRaffle);
