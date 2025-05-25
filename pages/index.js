@@ -258,6 +258,7 @@ export default function Home() {
             <li className={styles.rulesItem}>Weekly draw every Thursday 08:30~08:35 UTC</li>
             <li className={styles.rulesItem}>Minimum entry: 0.05 MON</li>
             <li className={styles.rulesItem}>More contribution = Higher chances ❕❕❕</li>
+            <li className={styles.rulesItem}>The winning gold will be automatically sent to the winner's address~</li>
           </ul>
         </div>
 
