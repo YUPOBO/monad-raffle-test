@@ -1,4 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+This is the front-end code of Monad Raffle (Testnet) implemented using NEXT.js and ethers.
+
+project page: [monad-raffle-test.vercel.app](https://monad-raffle-test.vercel.app)
+
+Monad Raffle (Testnet) is a web3 lottery automatically executed periodically on monad testnet.
+
+The probability of winning is proportional to the player's invested amount.
+
+In monad testnet, Chainlink has not yet implemented VRF and Keepers, 
+
+but Chainlink's CCIP can be used in monad. Therefore:
+
+- Using VRF on Avalanche's fuji net to generate random numbers. 
+
+- Using CCIP to send random numbers to Monad testnet (The function of selecting winner is implemented in _ccipReceive).
+
+- Using Keepers on Avalanche's fuji net to periodically call the send function. 
+
+visit [contracts github pages](https://github.com/YUPOBO/lottery-monad-testnet-contracts)
+
+MonadRaffleReceiver contract on [explorer](https://testnet.monadexplorer.com/address/0x472ed72434B35Bd562886256B5De87E887340D25?tab=Contract).
+
+AvalancheRaffleSender contract on [explorer](https://subnets-test.avax.network/c-chain/address/0x528508327b2fa3b5d622b7c83152f8fe5d6fa3f7).
+
+## Dependency
+
+node.js and ethers are needed.
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
 ## Getting Started
 

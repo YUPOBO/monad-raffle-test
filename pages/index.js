@@ -15,36 +15,6 @@ export default function Home() {
   const [entryAmount, setEntryAmount] = useState("");
   const [account, setAccount] = useState(null);
 
-  /* useEffect(() => {
-    if (!account || !window.ethereum) return;
-
-    
-    const provider = new ethers.providers.Web3Provider(window.ethereum);
-    const contractWithSigner = contract.connect(provider.getSigner());
-
-    // evnt: RaffleEnter , RaffleReEnter 
-    const onEnterRaffle = (player, value) => {
-      if (player.toLowerCase() === account.toLowerCase()) {
-        updateUI(provider.getSigner(), account); 
-      }
-    };
-
-    // evnt: WinnerPicked
-    const onWinnerPicked = (winner) => {
-      setWinner(winner);
-      updateUI(provider.getSigner(), account); 
-    };
-
-    contractWithSigner.on("RaffleEnter", onEnterRaffle);
-    contractWithSigner.on("RaffleReEnter", onEnterRaffle);
-    contractWithSigner.on("WinnerPicked", onWinnerPicked);
-
-    return () => {
-      contractWithSigner.off("RaffleEnter", onEnterRaffle);
-      contractWithSigner.off("RaffleReEnter", onEnterRaffle);
-      contractWithSigner.off("WinnerPicked", onWinnerPicked);
-    };
-  }, [account]); */
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -102,14 +72,14 @@ export default function Home() {
       const lastWinner = await contractWithSigner.getRecentWinner();
       const pool = await contractWithSigner.getBalance();
 
-      // get player balance onlyif  connected
+      // get player balance only if connected
       if (account) {
         const balance = await contractWithSigner.getPlayerBlance(account);
-        setUserBalance(ethers.utils.formatEther(balance));
+        setUserBalance(parseFloat(ethers.utils.formatEther(balance)).toFixed(4));
       }
 
       setWinner(lastWinner?.toString() || "No winner yet");
-      setPoolAmount(ethers.utils.formatEther(pool));
+      setPoolAmount(parseFloat(ethers.utils.formatEther(pool)).toFixed(4));
     } catch (error) {
       console.error("Error updating UI:", error);
     }
@@ -123,7 +93,8 @@ export default function Home() {
       localStorage.removeItem("WALLETCONNECT_DEEPLINK_CHOICE");
 
       if (!window.ethereum) {
-        throw new Error("MetaMask not installed");
+        alert("MetaMask not installed. Please install MetaMask to continue.");
+        return;
       }
 
       // Request permissions to ensure re-authorization
@@ -184,11 +155,50 @@ export default function Home() {
       return;
     }
 
+    if (!/^\d+(\.\d{1,4})?$/.test(entryAmount)) {
+      alert("Entry amount can have at most 4 decimal places");
+      return;
+    }
+
     try {
       if (!window.ethereum) throw new Error("MetaMask not installed");
 
+      // Ensure the network is Monad Testnet
+      const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (currentChainId !== '0x279f') {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x279f' }],
+          });
+        } catch (error) {
+          if (error.code === 4902) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [{
+                chainId: "0x279f",
+                chainName: "Monad Testnet",
+                nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+                rpcUrls: [RPC_URL],
+                blockExplorerUrls: ['https://testnet.monadexplorer.com']
+              }]
+            });
+          } else {
+            throw error;
+          }
+        }
+      }
+
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
+      const address = await signer.getAddress();
+      const balance = await provider.getBalance(address);
+      const formattedBalance = ethers.utils.formatEther(balance);
+      if (entryAmount > formattedBalance) {
+        alert("Insufficient MON balance");
+        return;
+      }
+
       const contractWithSigner = contract.connect(signer);
 
       await contractWithSigner.enterRaffle({
@@ -197,7 +207,11 @@ export default function Home() {
 
       setEntryAmount("");
     } catch (error) {
-      console.error("Error entering raffle:", error);
+      if (error.code === "ACTION_REJECTED") {
+        alert("Transaction was rejected by the user.");
+      } else {
+        console.error("Error entering raffle:", error);
+      }
     }
   };
 
