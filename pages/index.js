@@ -194,7 +194,7 @@ export default function Home() {
       const address = await signer.getAddress();
       const balance = await provider.getBalance(address);
       const formattedBalance = ethers.utils.formatEther(balance);
-      if (entryAmount > formattedBalance) {
+      if (Number(entryAmount) > Number(formattedBalance)) {
         alert("Insufficient MON balance");
         return;
       }
